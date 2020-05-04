@@ -1,0 +1,22 @@
+select within radius
+
+SELECT *
+FROM pois
+WHERE ST_Distance_Sphere(geom, ST_MakePoint(8.511101,47.377845)) <= 100 
+
+
+Create preference table/ checkins per category:
+
+CREATE TABLE user_venue_checkins AS
+(SELECT checkins.userid, pois.venue_category_name, COUNT(*) as c 
+		from checkins INNER JOIN pois on pois.venueid = checkins.venueid 
+		group by userid, venue_category_name)
+
+
+
+checksins per venueid
+
+CREATE TABLE user_checkins_per_venue AS
+(SELECT userid, venueid, COUNT(*) as c 
+		from checkins 
+		group by userid, venue_category_name)
