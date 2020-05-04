@@ -5,7 +5,9 @@ The file recommender.py provides a first draft of the POI recommender system. It
 
 
 ## Setup 
-To make the correct database calls the database information need to be adjusted in line 127-131. The following tables need to exist:
+To make the correct database calls the database information need to be adjusted in line 127-131. 
+
+The following tables need to exist:
 
 * pois (contains venues from POI dataset)
 * checkins (contains checkin data from POI dataset)
