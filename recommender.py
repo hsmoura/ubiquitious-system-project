@@ -10,22 +10,22 @@ from scipy.stats import pearsonr
 # TODO if a user has 500 checkins it weights much higher than 20. we need to normalize this somehow
 
 def get_pois_in_radius(lat, lon, radius):
-	conn = psycopg2.connect("dbname='poi_db' host='localhost' user='bop' password='****'")
-	cur = conn.cursor()
-	sql = f'SELECT * FROM pois WHERE ST_Distance_Sphere(geom, ST_MakePoint({lat},{lon})) <= {radius}' 
+	cur = db_conn.cursor()
+	sql = f'SELECT * \
+            FROM pois \
+            WHERE ST_DWithin(geom, ST_GeogFromText(\'POINT({lon} {lat})\'), {radius});'
 	cur.execute(sql)
 	res = cur.fetchall()
 	results = []
 	for row in res:
-		item = {'venue_id': row[0], "lon": row[1], 'lat': row[2], 'venue_category_name': row[3], 'country_code': row[4], 'geom': row[5]}
+		item = {'venue_id': row[0], "lat": row[1], 'lon': row[2], 'venue_category_name': row[3], 'country_code': row[4], 'geom': row[5]}
 		results.append(item)
 	return results
 
 
 # query all users who checked in at a poi
 def get_users_for_poi(venue_id):
-	conn = psycopg2.connect("dbname='poi_db' host='localhost' user='bop' password='****'")
-	cur = conn.cursor()
+	cur = db_conn.cursor()
 	sql = f'SELECT userid FROM user_checkins_per_venue WHERE venueid = \'{venue_id}\' '
 	cur.execute(sql)
 	res = cur.fetchall()
@@ -50,8 +50,7 @@ def normalize_values(user_preference):
 # number of checkins between 0 and 110000 (excluding home with 322116)
 # query preferences of user, those are all venues he checked in, with more checkins indicating higher preference
 def get_preferences_of_user(user_id):
-	conn = psycopg2.connect("dbname='poi_db' host='localhost' user='bop' password='****'")
-	cur = conn.cursor()
+	cur = db_conn.cursor()
 	sql = f'SELECT venue_category_name, c \
 		from user_venue_checkins \
 		WHERE userid = \'{user_id}\' '
@@ -67,8 +66,7 @@ def get_preferences_of_user(user_id):
 
 # returns list of all possible venue categories
 def get_venue_categories():
-	conn = psycopg2.connect("dbname='poi_db' host='localhost' user='bop' password='****'")
-	cur = conn.cursor()
+	cur = db_conn.cursor()
 	sql = f'SELECT venue_category_name from pois group by venue_category_name'
 	cur.execute(sql)
 	results = cur.fetchall()
@@ -137,8 +135,8 @@ if __name__ == '__main__':
 	dummy_user_pref = get_preferences_of_user(dummy_id)
 	dummy_user_preference = create_preference_list(dummy_user_pref, venue_categories)
 
-	lat = 8.511101
-	lon = 47.377845
+	lon = 8.511101
+	lat = 47.377845
 	# radius is in metres
 	radius = 100
 

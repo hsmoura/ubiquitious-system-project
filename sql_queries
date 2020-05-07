@@ -1,3 +1,31 @@
+create gps data table geom
+
+ALTER TABLE processed_trips ADD COLUMN geom_start geometry(POINT, 4326);
+UPDATE processed_trips SET geom_start=ST_SetSRID(ST_MakePoint(processed_trips.lon_start, processed_trips.lat_start) ,4326);
+CREATE INDEX idx_geom_start ON processed_trips USING GIST(geom_start);
+
+ALTER TABLE processed_trips ADD COLUMN geom_end geometry(POINT, 4326);
+UPDATE processed_trips SET geom_end=ST_SetSRID(ST_MakePoint(processed_trips.lon_end, processed_trips.lat_end) ,4326);
+CREATE INDEX idx_geom_end ON processed_trips USING GIST(geom_end);
+
+
+
+exploratory selection of gps
+
+SELECT sessions.user_id, processed_trips.geom_end, count(*) as c from processed_trips inner join sessions on 
+processed_trips.daily_user_id=sessions.daily_user_id
+group by sessions.user_id, processed_trips.geom_end
+order by sessions.user_id asc
+
+
+unique trips in gps data: --> user 455 has 271 trips on 31 locations
+SELECT sessions.user_id, count(*) as c from processed_trips inner join sessions on 
+processed_trips.daily_user_id=sessions.daily_user_id
+group by sessions.user_id
+order by sessions.user_id asc
+
+
+
 select within radius
 
 SELECT *
