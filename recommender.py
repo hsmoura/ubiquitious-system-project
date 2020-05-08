@@ -1,6 +1,7 @@
 import psycopg2
 import operator
 from scipy.stats import pearsonr
+from util import normalize_values, get_venue_categories, create_preference_list
 
 # TODO normalize preference values, maybe read references papers on checkin based POI
 # TODO database connection as command line or sth to share code
@@ -9,7 +10,8 @@ from scipy.stats import pearsonr
 # TODO maybe remove everything with just 1 checkin for performance, alternative below a threshold, e.g. 5
 # TODO if a user has 500 checkins it weights much higher than 20. we need to normalize this somehow
 
-def get_pois_in_radius(lat, lon, radius):
+
+def get_pois_in_radius(lat, lon, radius, db_conn):
 	cur = db_conn.cursor()
 	sql = f'SELECT * \
             FROM pois \
@@ -24,7 +26,7 @@ def get_pois_in_radius(lat, lon, radius):
 
 
 # query all users who checked in at a poi
-def get_users_for_poi(venue_id):
+def get_users_for_poi(venue_id, db_conn):
 	cur = db_conn.cursor()
 	sql = f'SELECT userid FROM user_checkins_per_venue WHERE venueid = \'{venue_id}\' '
 	cur.execute(sql)
@@ -35,21 +37,9 @@ def get_users_for_poi(venue_id):
 	return users
 
 
-# apply min/max normalization
-def normalize_values(user_preference):
-	# remove user id string from values
-	values = list(filter(lambda i: not (type(i) is str), user_preference.values()))
-
-	min_value = 0
-	max_value = max(values)
-	for key, value in user_preference.items():
-		if key is not 'user_id':
-			user_preference[key] = (value - min_value) / (max_value - min_value)
-	return user_preference
-
 # number of checkins between 0 and 110000 (excluding home with 322116)
 # query preferences of user, those are all venues he checked in, with more checkins indicating higher preference
-def get_preferences_of_user(user_id):
+def get_preferences_of_user(user_id, db_conn):
 	cur = db_conn.cursor()
 	sql = f'SELECT venue_category_name, c \
 		from user_venue_checkins \
@@ -64,29 +54,6 @@ def get_preferences_of_user(user_id):
 	normalized_preference = normalize_values(user_preference)
 	return normalized_preference
 
-# returns list of all possible venue categories
-def get_venue_categories():
-	cur = db_conn.cursor()
-	sql = f'SELECT venue_category_name from pois group by venue_category_name'
-	cur.execute(sql)
-	results = cur.fetchall()
-
-	# transform from tupel to list of strings
-	venue_categories = []
-	for result in results:
-		venue_categories.append(result[0])
-	return venue_categories
-
-
-def create_preference_list(user_preferences, venue_categories):
-	preference_single = []
-	for category in venue_categories:
-		if category in user_preferences:
-			preference_single.append(user_preferences[category])
-		else:
-			preference_single.append(0)
-	return preference_single
-
 
 # calculate correlation using pearson coefficient
 def calculate_correlation(user, reference_user):
@@ -97,7 +64,7 @@ def calculate_correlation(user, reference_user):
 
 
 # uses weighted average approach as proposed in https://realpython.com/build-recommendation-engine-collaborative-filtering/#how-to-calculate-the-ratings
-def predict_rating(poi, predictors):
+def predict_rating(poi, predictors, db_conn):
 	cur = db_conn.cursor()
 	venue_id = poi['venue_id']
 	ratings = {}
@@ -121,6 +88,49 @@ def predict_rating(poi, predictors):
 	return sum_1 / sum_2
 
 
+def recommend_poi(user_preference_list, lat, lon, radius):
+	db_name = 'poi_db'
+	db_host = 'localhost'
+	db_user = 'bop'
+	db_pw = '****'
+	db_conn = psycopg2.connect(f"dbname='{db_name}' host='{db_host}' user='{db_user}' password='{db_pw}'")
+
+	venue_categories = get_venue_categories(db_conn)
+
+	nearby_pois = get_pois_in_radius(lat, lon, radius, db_conn)
+
+	# get user who voted (checked in) on pois in radius
+	reference_users = []
+	for poi in nearby_pois:
+		users = get_users_for_poi(poi['venue_id'], db_conn)
+		if users is not None:
+			reference_users = reference_users + users
+
+	# preference matrix contains preferences of users. each row is a dict with userid and preferences
+	# preferences is array with rating for each possible venue type
+	preferences_all = {}
+
+	for user in reference_users:
+		user_preferences = get_preferences_of_user(user, db_conn)
+		preferences_all[user] = create_preference_list(user_preferences, venue_categories)
+
+	correlations = {}
+	for user, pref in preferences_all.items():
+		corr = calculate_correlation(user_preference_list, pref)
+		correlations[user] = corr
+
+	# only consider top 5 similar users
+	sorted_correlations = sorted(correlations.items(), key=operator.itemgetter(1), reverse=True)
+	predictors = dict(sorted_correlations[:5])
+
+	poi_ratings = {}
+	for poi in nearby_pois:
+		poi_ratings[poi['venue_id']] = predict_rating(poi, predictors, db_conn)
+
+	return poi_ratings
+
+"""
+# TODO used for testing
 if __name__ == '__main__':
 	db_name = 'poi_db'
 	db_host = 'localhost'
@@ -128,7 +138,7 @@ if __name__ == '__main__':
 	db_pw = '****'
 	db_conn = psycopg2.connect(f"dbname='{db_name}' host='{db_host}' user='{db_user}' password='{db_pw}'")
 
-	venue_categories = get_venue_categories()
+	venue_categories = get_venue_categories(db_conn)
 
 	# create dummy user until we have our own
 	dummy_id = '86747'
@@ -174,3 +184,4 @@ if __name__ == '__main__':
 		poi_ratings[poi['venue_id']] = predict_rating(poi, predictors)
 
 	print(poi_ratings)
+"""
