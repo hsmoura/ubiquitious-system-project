@@ -9,6 +9,7 @@ from db_identifiers import db_identifiers
 # TODO database connection as command line or sth to share code
 # TODO maybe refactor to numpy?
 # TODO maybe remove everything with just 1 checkin for performance, alternative below a threshold, e.g. 5
+# TODO think about num of predictors, if low single predictors have huge influence, because they may be the only one with a rating, if high low correlation users influence decision
 
 
 def get_pois_in_radius(lat, lon, radius, db_conn):
@@ -86,6 +87,22 @@ def predict_rating(poi, predictors, max_ratings,  db_conn):
 	for user, rating in ratings.items():
 		normalized_ratings[user] = normalize_rating(rating, max_ratings[user])
 
+	sum_1 = 0
+	sum_2 = 0
+	for user, rating in normalized_ratings.items():
+		# ignore if user did not visit location, otherwise it would be counted as string dislike, which is not necessarily the case
+		if rating == 0:
+			continue
+		# find correlation of user that gave rating (predictor)
+		corr = predictors[user]
+		sum_1 += (rating * corr)
+		sum_2 += corr
+	if sum_2 != 0:
+		result = sum_1 / sum_2
+	else:
+		result = 0
+	"""
+	# outdated appraoch where 0 is considered really negative
 	# calculation of weigted average
 	sum_1 = 0
 	for user, rating in normalized_ratings.items():
@@ -93,9 +110,9 @@ def predict_rating(poi, predictors, max_ratings,  db_conn):
 		corr = predictors[user]
 		sum_1 = sum_1 + (rating * corr)
 	sum_2 = sum(predictors.values())
-	return sum_1 / sum_2
-
-
+	result = sum_1 / sum_2
+	"""
+	return result
 
 
 
@@ -148,11 +165,11 @@ def recommend_poi(user_preference_list, lat, lon, radius):
 		correlations[user] = corr
 	print('calculate correlations ' + str(time.time() - start) + 'for num prefs: ' + str(len(reference_users)))
 
-	# only consider top 5 similar users
+	# only consider top similar users
 	sorted_correlations = sorted(correlations.items(), key=operator.itemgetter(1), reverse=True)
-	num_predictors = 3
+	num_predictors = 5
 	if len(sorted_correlations) > num_predictors:
-		predictors = dict(sorted_correlations[:10])
+		predictors = dict(sorted_correlations[:num_predictors])
 	else:
 		predictors = dict(sorted_correlations)
 	print("predictors: " + str(predictors))
@@ -169,14 +186,14 @@ def recommend_poi(user_preference_list, lat, lon, radius):
 
 	# return three top recommendations
 	counter = Counter(poi_ratings)
-	best_rated = counter.most_common(3)
+	best_rated = counter.most_common(5)
 	recommended_pois = []
 	for item in best_rated:
 		poi_data = get_poi_from_id(item[0], db_conn)
 		poi = {'venueid': poi_data[0],
 			   'lat': poi_data[1],
 			   'lon': poi_data[2],
-			   'venue_category_name': poi_data[4],
+			   'venue_category_name': poi_data[3],
 			   'rating': item[1]}
 		recommended_pois.append(poi)
 
